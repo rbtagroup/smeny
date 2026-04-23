@@ -924,6 +924,34 @@ function DriverView({
   busy,
 }) {
   const myAvailability = availability.filter((item) => item.driver_id === currentDriver?.id)
+  const [selectedShiftId, setSelectedShiftId] = useState('')
+
+  useEffect(() => {
+    const availableIds = visibleShifts.map((item) => item.id)
+    if (!availableIds.length) {
+      setSelectedShiftId('')
+      return
+    }
+
+    if (upcomingShift?.id && availableIds.includes(upcomingShift.id)) {
+      setSelectedShiftId((current) => (current && availableIds.includes(current) ? current : upcomingShift.id))
+      return
+    }
+
+    setSelectedShiftId((current) => (current && availableIds.includes(current) ? current : availableIds[0]))
+  }, [upcomingShift?.id, visibleShifts])
+
+  const selectedShift =
+    visibleShifts.find((shift) => shift.id === selectedShiftId) ??
+    upcomingShift ??
+    visibleShifts[0] ??
+    null
+
+  const selectableShifts = useMemo(() => {
+    if (!selectedShift) return visibleShifts.slice(0, 4)
+    const others = visibleShifts.filter((shift) => shift.id !== selectedShift.id)
+    return [selectedShift, ...others].slice(0, 4)
+  }, [selectedShift, visibleShifts])
 
   if (!currentDriver) {
     return <div className="panel">K tomuto profilu zatím není přiřazen řidičský záznam.</div>
@@ -934,36 +962,68 @@ function DriverView({
       <div className="stack-xl">
         <div className="hero-card">
           <div>
-            <div className="eyebrow">Moje dnešní směna</div>
-            <h2>{upcomingShift ? SHIFT_TYPE_LABEL[upcomingShift.shift_type] : 'Dnes bez směny'}</h2>
+            <div className="eyebrow">Moje vybraná směna</div>
+            <h2>{selectedShift ? SHIFT_TYPE_LABEL[selectedShift.shift_type] : 'Dnes bez směny'}</h2>
             <p>
-              {upcomingShift
-                ? `${formatDate(upcomingShift.start_at, { weekday: 'long' })} · ${formatTime(upcomingShift.start_at)}–${formatTime(upcomingShift.end_at)}`
+              {selectedShift
+                ? `${formatDate(selectedShift.start_at, { weekday: 'long' })} · ${formatTime(selectedShift.start_at)}–${formatTime(selectedShift.end_at)}`
                 : 'Aktuálně nemáš přiřazenou směnu.'}
             </p>
           </div>
-          {upcomingShift && <StatusPill tone={upcomingShift.driver_response === 'accepted' ? 'success' : upcomingShift.driver_response === 'declined' ? 'danger' : 'warning'}>{RESPONSE_LABEL[upcomingShift.driver_response]}</StatusPill>}
+          {selectedShift && (
+            <StatusPill
+              tone={
+                selectedShift.driver_response === 'accepted'
+                  ? 'success'
+                  : selectedShift.driver_response === 'declined'
+                    ? 'danger'
+                    : 'warning'
+              }
+            >
+              {RESPONSE_LABEL[selectedShift.driver_response]}
+            </StatusPill>
+          )}
         </div>
 
-        {upcomingShift ? (
+        {selectedShift ? (
           <div className="grid-2">
             <section className="panel">
               <h3>Detail směny</h3>
-              <InfoRow label="Auto" value={`${upcomingShift.vehicle?.name ?? '—'} · ${upcomingShift.vehicle?.plate ?? '—'}`} />
-              <InfoRow label="Stav směny" value={STATUS_LABEL[upcomingShift.status]} />
-              <InfoRow label="Poznámka" value={upcomingShift.note || 'Bez poznámky'} />
+              <InfoRow label="Auto" value={`${selectedShift.vehicle?.name ?? '—'} · ${selectedShift.vehicle?.plate ?? '—'}`} />
+              <InfoRow label="Stav směny" value={STATUS_LABEL[selectedShift.status]} />
+              <InfoRow label="Poznámka" value={selectedShift.note || 'Bez poznámky'} />
               <div className="button-row">
-                <button className="primary-button" disabled={busy || upcomingShift.driver_response === 'accepted'} onClick={() => onRespond(upcomingShift, 'accepted')}>Potvrdit směnu</button>
-                <button className="danger-button" disabled={busy || upcomingShift.driver_response === 'declined'} onClick={() => onRespond(upcomingShift, 'declined')}>Odmítnout</button>
+                <button
+                  className="primary-button"
+                  disabled={busy || selectedShift.driver_response === 'accepted'}
+                  onClick={() => onRespond(selectedShift, 'accepted')}
+                >
+                  Potvrdit směnu
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={busy || selectedShift.driver_response === 'declined'}
+                  onClick={() => onRespond(selectedShift, 'declined')}
+                >
+                  Odmítnout
+                </button>
               </div>
             </section>
             <section className="panel">
               <h3>Další směny</h3>
               <div className="stack-md">
-                {visibleShifts.slice(0, 4).map((shift) => (
-                  <ShiftListItem key={shift.id} shift={shift} compact />
+                {selectableShifts.map((shift) => (
+                  <ShiftListItem
+                    key={shift.id}
+                    shift={shift}
+                    compact
+                    clickable
+                    active={shift.id === selectedShift.id}
+                    onClick={() => setSelectedShiftId(shift.id)}
+                  />
                 ))}
               </div>
+              <p className="muted">Klikni na směnu vpravo a otevře se vlevo pro potvrzení nebo odmítnutí.</p>
             </section>
           </div>
         ) : null}
@@ -1037,7 +1097,12 @@ function DriverView({
               <p>{formatTime(shift.start_at)}–{formatTime(shift.end_at)} · {vehiclesMap[shift.vehicle_id]?.plate ?? 'Bez auta'}</p>
               <p className="muted">{shift.note || 'Bez poznámky'}</p>
             </div>
-            <StatusPill tone={shift.driver_response === 'accepted' ? 'success' : shift.driver_response === 'declined' ? 'danger' : 'warning'}>{RESPONSE_LABEL[shift.driver_response]}</StatusPill>
+            <div className="button-row">
+              <StatusPill tone={shift.driver_response === 'accepted' ? 'success' : shift.driver_response === 'declined' ? 'danger' : 'warning'}>{RESPONSE_LABEL[shift.driver_response]}</StatusPill>
+              <button className="ghost-button" type="button" onClick={() => setSelectedShiftId(shift.id)}>
+                Otevřít v detailu
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -1479,9 +1544,28 @@ function DispatcherView(props) {
   )
 }
 
-function ShiftListItem({ shift, compact = false }) {
+function ShiftListItem({ shift, compact = false, clickable = false, active = false, onClick }) {
+  const handleActivate = () => {
+    if (onClick) onClick()
+  }
+
+  const handleKeyDown = (event) => {
+    if (!clickable) return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleActivate()
+    }
+  }
+
   return (
-    <div className={cx('list-card', compact && 'compact')}>
+    <div
+      className={cx('list-card', compact && 'compact', clickable && 'clickable-card', active && 'active-card')}
+      onClick={clickable ? handleActivate : undefined}
+      onKeyDown={clickable ? handleKeyDown : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-pressed={clickable ? active : undefined}
+    >
       <div>
         <strong>{shift.driver?.display_name ?? 'Bez řidiče'} · {SHIFT_TYPE_LABEL[shift.shift_type]}</strong>
         <p>{formatDate(shift.start_at, { weekday: 'long' })} · {formatTime(shift.start_at)}–{formatTime(shift.end_at)}</p>
